@@ -16,6 +16,7 @@
 .globl _invalid_TSS,    _segment_not_present,           _stack_segment
 .globl _general_protection,  _coprocessor_error,_irq13, _reserved
 
+//处理上下文，并跳转到对应的中断处理函数中。
 _divide_error:
 	pushl $_do_divide_error
 no_error_code:

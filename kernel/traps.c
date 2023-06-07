@@ -40,6 +40,7 @@ int do_exit(long code);
 
 void page_exception(void);
 
+//divide_error只是申明符号，实际处理逻辑在asm.s文件的_divide_error汇编代码段。
 void divide_error(void);
 void debug(void);
 void nmi(void);
@@ -84,6 +85,7 @@ static void die(char * str,long esp_ptr,long nr)
 	do_exit(11);		/* play segment exception */
 }
 
+//do_xxx是中断处理程序，负责实际中断处理逻辑
 void do_double_fault(long esp, long error_code)
 {
 	die("double fault",esp,error_code);
@@ -181,7 +183,7 @@ void do_reserved(long esp, long error_code)
 void trap_init(void)
 {
 	int i;
-
+//填充中断向量表。
 	set_trap_gate(0,&divide_error);
 	set_trap_gate(1,&debug);
 	set_trap_gate(2,&nmi);
