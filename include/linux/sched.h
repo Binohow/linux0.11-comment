@@ -154,6 +154,15 @@ extern void wake_up(struct task_struct ** p);
  */
 #define FIRST_TSS_ENTRY 4
 #define FIRST_LDT_ENTRY (FIRST_TSS_ENTRY+1)
+
+/*
+_TSS(n): 根据进程号构造tts选择子。
+	FIRST_TSS_ENTRY<<3是为了构造选择子的低3位（都填充为0），由高到底分别是TI、RPL。
+		FIRST_TSS_ENTRY为4代表，gdt中的第四项tss0。
+	(unsigned long) n)<<4 等价于(unsigned long) n)<<3<<1，其中(unsigned long) n)<<3是为了将低3位填充为0。
+		(unsigned long) n)<<1相当于2*n，然后加上tss0在gdt中的位置4，正好为tssn在gdt中项编号。
+*/
+
 #define _TSS(n) ((((unsigned long) n)<<4)+(FIRST_TSS_ENTRY<<3))
 #define _LDT(n) ((((unsigned long) n)<<4)+(FIRST_LDT_ENTRY<<3))
 #define ltr(n) __asm__("ltr %%ax"::"a" (_TSS(n)))
@@ -170,6 +179,10 @@ __asm__("str %%ax\n\t" \
  * This also clears the TS-flag if the task we switched to has used
  * tha math co-processor latest.
  */
+
+/**
+switch_to(n)：整个宏定义利用 ljmp 指令跳转到 TSS 段选择符来实现任务切换  
+**/
 #define switch_to(n) {\
 struct {long a,b;} __tmp; \
 __asm__("cmpl %%ecx,_current\n\t" \
@@ -184,7 +197,34 @@ __asm__("cmpl %%ecx,_current\n\t" \
 	::"m" (*&__tmp.a),"m" (*&__tmp.b), \
 	"d" (_TSS(n)),"c" ((long) task[n])); \
 }
+/*
+struct {long a,b;} __tmp: 用来构造ljmp的操作数。该操作数由4个字节的偏移和两个字节的选择符组成。
+当是tss选择符时，
+ljmp跳转到tss段选择符回造成切换到tss选择符对应的进程
 
+"m" (*&__tmp.a): 存放偏移
+"m" (*&__tmp.b)：存放tss的选择符，高两字节为0
+ljmp 指令格式是 ljmp 16 位段选择符：32 位偏移，但如果操作数在内存中，顺序正好相反。  
+%0 内存地址 __tmp.a的地址 偏移
+%1 内存地址 __tmp.b的地址 选择符
+%2 edx 任务号为n的tts选择符
+%3 ecx task[n]
+
+cmpl %%ecx,_current 判断要切换得任务是否就是当前运行的任务
+je 1f 如果是，则跳转到前面标号1处，结束
+movw %%dx,%1 将tssn选择符放置到__tmp.b中，高地址
+xchgl %%ecx,_current  更改_current值要切换到的进程tcb指针
+ljmp *%0  当ljmp的操作数为tss选择符时触发进程切换，保存上文到当前进程tss所指向内存（tcb内），将要
+	切换的进程tcb中tss结构体中的内容恢复到cpu寄存器。
+
+cmpl %%ecx,_last_task_used_math  除了进程第一次被调度外（move_to_user_mode），以后进程从就绪态返回运行态，
+	都从这里开始。从哪里走，就从哪里回来。
+	根据任务 n 之前是否使用过协处理器（数学协处理器），如果没有使用过，则清除 CR0 控制寄存器中的 TS 位，重新启用协处理器。
+	这个？？？。
+	原任务上次使用过协处理器吗？
+jne 1f
+clts 原任务上次使用过协处理器，则清 cr0 中的任务
+*/
 #define PAGE_ALIGN(n) (((n)+0xfff)&0xfffff000)
 
 #define _set_base(addr,base)  \
